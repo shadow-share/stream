@@ -22,6 +22,11 @@ class FamilyInvalid(Exception):
     pass
 
 
+class ConnectionClosed(Exception):
+    pass
+
+
+RECEIVE_LENGTH = 20
 BIG_ENDING = '>'
 LITTLE_ENDING = '<'
 NATIVE_BYTE_ORDER = LITTLE_ENDING
@@ -46,42 +51,65 @@ class Packet(object):
         self._byte_array.append(value & 0xff)
 
     def put_uint16(self, value):
+        # 0x1234   --->   0x12, 0x34  [Big-Ending]
         self.put_uint8((value & 0xff00) >> 8)
         self.put_uint8(value & 0xff)
 
     def put_uint32(self, value):
+        # 0x12345678   --->   0x12, 0x34, 0x56, 0x78  [Big-Ending]
         self.put_uint16((value & 0xffff0000) >> 16)
         self.put_uint16(value & 0xffff)
 
     def put_uint64(self, value):
+        # 0x1122334455667788 -> 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88
         self.put_uint32((value & 0xffffffff00000000) >> 32)
         self.put_uint32(value & 0xffffffff)
 
     def pop_uint8(self):
         return self._byte_array.pop()
 
+    def shift_uint8(self):
+        return self._byte_array.pop(0)
+
     def pop_uint16(self):
         # 0x1234   --->   0x12, 0x34 [Big-Ending]
         # POP: 0x34 | 0x12 << 8
         return self.pop_uint8() | self.pop_uint8() << 8
+
+    def shift_uint16(self):
+        return self.self.shift_uint8() << 8 | self.shift_uint8()
 
     def pop_uint32(self):
         # 0x11223344   --->   0x11, 0x22, 0x33, 0x44
         # POP: 0x44 | 0x33 << 8 | 0x22 << 16 | 0x11 << 24
         return self.pop_uint16() | self.pop_uint16() << 16
 
+    def shift_uint32(self):
+        return self.shift_uint16() << 16 | self.shift_uint16()
+
     def pop_uint64(self):
         # 0x1122334455667788 --> 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88
         # POP: 0x88 | 0x77 << 8 | 0x66 << 16 | ... | 0x11 < 56
         return self.pop_uint32() | self.pop_uint32() << 32
 
+    def shift_uint64(self):
+        return self.shift_uint32() << 32 | self.shift_uint32()
+
     def put_string(self, string):
+        # Low --------------> Hgh
+        #  s   t   r   i   n   g   [Big-Ending]
         self.fill(string)
 
     def pop_string(self, length):
         string = self._byte_array.tobytes()[len(self) - length:]
         for _ in range(length):
             self._byte_array.pop()
+        return string
+
+    def shift_string(self, length):
+        string = self._byte_array.tobytes()[:length + 1]
+        for _ in range(length):
+            self._byte_array.pop(0)
         return string
 
     def pop_all(self):
@@ -101,6 +129,12 @@ class Packet(object):
             if origin.find(subject) != -1:
                 return True
         return False
+
+    def find(self, subject):
+        if not self.exists(subject):
+            return -1
+        origin = self._byte_array.tobytes()
+        return origin.find(subject)
 
     def __getitem__(self, item):
         if isinstance(item, int):
@@ -125,51 +159,54 @@ class Packet(object):
         return '<Packet Length={}>'.format(len(self))
 
 
-AF_INET = socket.AF_INET
-AF_INET6 = socket.AF_INET6
+class _SteamBase(object):
 
-
-class Steam(object):
-
-    def __init__(self, family=AF_INET):
-        if family not in [AF_INET, AF_INET6]:
-            raise FamilyInvalid('family only defined AF_INET and AF_INET6')
-        self._socket_fd = socket.socket(family)
+    def __init__(self, source=None):
         self._buffer = Packet()
+        if isinstance(source, (str, bytes)):
+            self._buffer.fill(source)
 
-    def connect(self, host, port, block=False):
-        try:
-            self._socket_fd.connect((host, port))
-            self._socket_fd.setblocking(block)
-        except ConnectionRefusedError:
-            raise SteamError('No connection could be made '
-                             'because the target machine actively refused it')
+        self._segment_protocol = None
 
-    def send(self, data):
-        if isinstance(data, Packet):
-            data = data.to_bytes()
-        if isinstance(data, str):
-            data = data.encode('utf-8')
-        if not isinstance(data, bytes):
-            raise IllegalValue('data except str, bytes or Packet type')
-        print(self._socket_fd.send(data))
+    def set_fragment_protocol(self, protocol, min_length=0):
+        if isinstance(protocol, int):
+            self._segment_protocol = \
+                (min_length, lambda buf: len(buf) >= protocol)
+        elif isinstance(protocol, (str, bytes)):
+            if isinstance(protocol, str):
+                protocol = protocol.encode('utf-8')
+            self._segment_protocol = \
+                (min_length, lambda buf: -1 if buf.find(protocol) == -1
+                    else buf.find(protocol) + len(protocol) - 1)
+        elif callable(protocol):
+            self._segment_protocol = (min_length, protocol)
+        else:
+            raise IllegalValue(
+                'fragment protocol except int, str, bytes or callable')
 
-    def receive(self, length=0, *, flag=None):
-        self._fill_packet()
-        return self._buffer.pop_all()
+    def pop_fragment(self):
+        min_length, protocol = self._segment_protocol
+        if len(self._buffer) < min_length:
+            return None
+        if min_length == 0:
+            min_length = len(self._buffer)
+        length = protocol(self._buffer.to_bytes()[:min_length])
+        string = self._buffer.shift_string(length)
+        if len(string) == 0:
+            return None
+        return string
 
-    def _fill_packet(self):
-        buffer = self._socket_fd.recv(0)
-        if buffer is None:
-            print('Socket is closed')
-        self._buffer.fill(buffer)
+    def __str__(self):
+        return '<StreamBase buffer_length={}>'.format(len(self._buffer))
 
 
-stream = Steam()
-stream.connect('127.0.0.1', 8080)
+s = _SteamBase('abcd\r\nefgh\r\nijkl\nmnop\r\n')
+s.set_fragment_protocol('\r\n')
+print(s)
+print(s.pop_fragment())
+print(s.pop_fragment())
+print(s.pop_fragment())
+print(s.pop_fragment())
+print(s.pop_fragment())
+print(s.pop_fragment())
 
-get_request = Packet()
-get_request.fill(b'GET / HTTP/1.1\r\n\r\n')
-stream.send(get_request)
-time.sleep(5)
-print(stream.receive())
