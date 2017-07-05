@@ -77,7 +77,7 @@ class Packet(object):
         return self.pop_uint8() | self.pop_uint8() << 8
 
     def shift_uint16(self):
-        return self.self.shift_uint8() << 8 | self.shift_uint8()
+        return self.shift_uint8() << 8 | self.shift_uint8()
 
     def pop_uint32(self):
         # 0x11223344   --->   0x11, 0x22, 0x33, 0x44
@@ -199,14 +199,16 @@ class _SteamBase(object):
     def __str__(self):
         return '<StreamBase buffer_length={}>'.format(len(self._buffer))
 
-
-s = _SteamBase('abcd\r\nefgh\r\nijkl\nmnop\r\n')
-s.set_fragment_protocol('\r\n')
+print(time.clock())
+s = Packet()
+for i in range(9999999):
+    s.put_uint8(0x12)
+    # s.put_uint16(0x0203)
+    # s.put_uint32(0x04050607)
+    # s.put_uint64(0x1122334455667788)
+    # s.put_string(b'abcdefg' * 16)
+    # s.put_string('hijklmn' * 16)
+    # s.pop_string(14)
+    # s.shift_string(12)
+print(time.clock())
 print(s)
-print(s.pop_fragment())
-print(s.pop_fragment())
-print(s.pop_fragment())
-print(s.pop_fragment())
-print(s.pop_fragment())
-print(s.pop_fragment())
-
