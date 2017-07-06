@@ -6,14 +6,14 @@
 
 /* Debug Utility Macro */
 #ifdef DEBUG
-#define Dbg(Fmt, Arg...) do {\
+    #define Dbg(Fmt, Arg...) do {\
         fprintf(stderr, "[DEBUG] %24s:%-4u %s: " Fmt "\n",\
             __FILE__, __LINE__,\
 			__PRETTY_FUNCTION__, ##Arg\
         );\
     } while (0)
 #else
-#define Dbg(Fmt, Arg...) do {\
+    #define Dbg(Fmt, Arg...) do {\
     } while (0)
 #endif
 
@@ -43,11 +43,17 @@ struct _packet_t;
 typedef struct _packet_t packet_t;
 typedef packet_t *Packet;
 
+
 /* Packet Methods */
 Packet packet_create();
 void packet_put_uint8(Packet packet, const uint8_t value);
+unsigned packet_get_node_size(const Packet packet);
 unsigned packet_get_size(const Packet packet);
 void packet_free(Packet *ptr_packet);
+
+
+/* Methods of Stream */
+void stream_init(void);
 
 #endif
 
