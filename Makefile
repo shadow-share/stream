@@ -1,9 +1,14 @@
 
 .PHONY all: stream
 
-stream: stream.c main.c
-	$(CC) -Wall -std=c99 -o stream $^
+
+stream.o: src/stream.c
+
+main.o: src/main.c
+
+stream: stream.o main.o
+    cc -o $@ $^
+
 
 .PHONY clean:
-	rm -rf stream
-
+	rm -rf *.o stream
