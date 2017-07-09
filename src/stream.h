@@ -39,6 +39,16 @@
 #endif
 
 
+/* Error Message */
+#define ERROR_EXIT(Fmt, Arg...) do {\
+    fprintf(stderr, "[ERROR] %24s:%-4u %s: " Fmt "\n",\
+        __FILE__, __LINE__,\
+        __PRETTY_FUNCTION__, ##Arg\
+    );\
+    exit(-1);\
+} while (0)
+
+
 struct _packet_t;
 typedef struct _packet_t packet_t;
 typedef packet_t *Packet;
@@ -60,7 +70,7 @@ uint32_t packet_shift_uint32(Packet packet);
 uint64_t packet_pop_uint64(Packet packet);
 uint64_t packet_shift_uint64(Packet packet);
 unsigned packet_get_node_size(const Packet packet);
-unsigned packet_get_size(const Packet packet);
+unsigned packet_get_data_size(const Packet packet);
 void packet_free(Packet *ptr_packet);
 
 
@@ -68,5 +78,3 @@ void packet_free(Packet *ptr_packet);
 void stream_init(void);
 
 #endif
-
-

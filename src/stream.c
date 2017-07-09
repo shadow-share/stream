@@ -39,23 +39,12 @@ Sock socket_create(const char *host, const int port);
 #define UINT8(value)                ((uint8_t)(value))
 
 
-/* Error Message */
-#define ERROR_EXIT(Fmt, Arg...) do {\
-    fprintf(stderr, "[ERROR] %24s:%-4u %s: " Fmt "\n",\
-        __FILE__, __LINE__,\
-        __PRETTY_FUNCTION__, ##Arg\
-    );\
-    exit(-1);\
-} while (0)
-
-
 /* Static ByteNode Structure */
-#define BYTE_NODE_DATA_SIZE         4097
+#define BYTE_NODE_DATA_SIZE         4099
 typedef struct _byte_node_t {
     uint8_t values[BYTE_NODE_DATA_SIZE]; // 1-byte
     uint16_t header_index;               // 2-bytes
     uint16_t current_index;              // 2-bytes
-    uint16_t data_size;                  // 2-bytes
     struct _byte_node_t *prev;           // 4-bytes
     struct _byte_node_t *next;           // 4-bytes // 15-bytes
 } byte_node_t;
@@ -70,7 +59,7 @@ static uint8_t byte_node_shift(ByteNode node);
 /* Static ByteArray Structure */
 typedef struct _byte_array_t {
     ByteNode header;
-    ByteNode *footer;
+    ByteNode footer;
     uint32_t node_size;
 } byte_array_t;
 typedef byte_array_t *ByteArray;
@@ -96,7 +85,7 @@ Packet packet_create() {
     packet->packet_size = 0;
 
 #ifdef DEBUG
-    Dbg("Create an address is %#p Packet object", packet);
+    Dbg("create new Packet Instance, address = %#p", packet);
 #endif
 
     return packet;
@@ -130,11 +119,17 @@ void packet_put_string(Packet packet, const char *string) {
 }
 
 uint8_t packet_pop_uint8(Packet packet) {
-    return byte_array_pop(packet->byte_array);
+    uint8_t ret = byte_array_pop(packet->byte_array);
+
+    --packet->packet_size;
+    return ret;
 }
 
 uint8_t packet_shift_uint8(Packet packet) {
-    return byte_array_shift(packet->byte_array);
+    uint8_t ret = byte_array_shift(packet->byte_array);
+
+    --packet->packet_size;
+    return ret;
 }
 
 uint16_t packet_pop_uint16(Packet packet) {
@@ -202,7 +197,7 @@ unsigned packet_get_node_size(const Packet packet) {
     return packet->byte_array->node_size;
 }
 
-unsigned packet_get_size(const Packet packet) {
+unsigned packet_get_data_size(const Packet packet) {
     return packet->packet_size;
 }
 
@@ -233,11 +228,17 @@ static ByteNode byte_node_create(void) {
 }
 
 static bool byte_node_put(ByteNode node, uint8_t value) {
-    if (node->data_size == BYTE_NODE_DATA_SIZE) {
+    if (node->current_index == BYTE_NODE_DATA_SIZE) {
         return false;
     }
+
+    // reset node state
+    if (node->header_index == node->current_index) {
+        node->header_index = 0;
+        node->current_index = 0;
+    }
+
     node->values[node->current_index++] = UINT8(value);
-    ++node->data_size;
     return true;
 }
 
@@ -267,38 +268,46 @@ static ByteArray byte_array_create(void) {
 static void byte_array_put(ByteArray byte_array, const uint8_t value) {
     if (byte_array->header == NULL) {
         byte_array->header = byte_node_create();
-        byte_array->footer = &(byte_array->header);
+        byte_array->footer = byte_array->header;
         byte_array->node_size = 1;
+
+        Dbg("initial ByteNode, address is %#p", byte_array->header);
     }
 
-    if (!byte_node_put(DE_PTR(byte_array->footer), value)) {
-        Dbg("The %d node is full, alloc new node", byte_array->node_size);
-
+    if (!byte_node_put(byte_array->footer, value)) {
         ByteNode new_node = byte_node_create();
-        new_node->prev = DE_PTR(byte_array->footer);
-        DE_PTR(byte_array->footer)->next = new_node;
-        byte_array->footer = &(DE_PTR(byte_array->footer)->next);
+        Dbg("last node[%d] is full, address = %#p",
+            byte_array->node_size - 1, byte_array->footer);
+        new_node->prev = byte_array->footer;
+
+        byte_array->footer->next = new_node;
+        byte_array->footer = byte_array->footer->next;
         ++byte_array->node_size;
-        if (!byte_node_put(DE_PTR(byte_array->footer), value)) {
+        if (!byte_node_put(byte_array->footer, value)) {
             ERROR_EXIT("cannot create new ByteNode");
         }
     }
 }
 
 static uint8_t byte_array_pop(ByteArray byte_array) {
-    ByteNode footer = DE_PTR(byte_array->footer);
+    ByteNode footer = byte_array->footer;
     // check footer-node is empty
     if (footer->current_index == footer->header_index) {
         if (byte_array->node_size == 1) {
             // cannot pop item from empty ByteArray
             ERROR_EXIT("cannot pop item from empty ByteArray");
         }
-        // update byte-array state
-        byte_array->footer = &(DE_PTR(byte_array->footer)->prev);
-        // remove empty-node
+        // update byte-array footer
+        byte_array->footer = byte_array->footer->prev;
+        // update footer next pointer to NULL
+        byte_array->footer->next = NULL;
+        // free empty-node
+        Dbg("the last empty node will be free, address = %#p", footer);
         free(footer);
         // re-assign footer
-        footer = DE_PTR(byte_array->footer);;
+        footer = byte_array->footer;
+        // update node-size
+        --byte_array->node_size;
     }
     // return last Byte
     return byte_node_pop(footer);
@@ -314,10 +323,15 @@ static uint8_t byte_array_shift(ByteArray byte_array) {
         }
         // update byte-array state
         byte_array->header = byte_array->header->next;
+        // update header `prev` pointer
+        byte_array->header->prev = NULL;
         // free empty header-node
+        Dbg("the first empty node will be free, address = %#p", header);
         free(header);
         // re-assign header
         header = byte_array->header;
+        // update node-size
+        --byte_array->node_size;
     }
     // return value
     return byte_node_shift(header);
