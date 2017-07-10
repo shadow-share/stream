@@ -49,10 +49,14 @@
 } while (0)
 
 
+/* Structure of Packet */
 struct _packet_t;
 typedef struct _packet_t packet_t;
 typedef packet_t *Packet;
 
+
+/* Global Typedef */
+typedef unsigned int Sock;
 
 /* Packet Methods */
 Packet packet_create();
@@ -74,7 +78,15 @@ unsigned packet_get_data_size(const Packet packet);
 void packet_free(Packet *ptr_packet);
 
 
+
+/* Structure of StreamBase */
+struct _stream_t;
+typedef struct _stream_t stream_t;
+typedef stream_t *Stream;
+
+
 /* Methods of Stream */
 void stream_init(void);
+Stream stream_create(void);
 
 #endif
