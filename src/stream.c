@@ -69,7 +69,15 @@ struct _packet_t {
 
 
 /* Stream Structure */
-struct _stream_t {
+struct _socket_stream_t {
+    Packet buffer;
+    char *host;
+    char *ip_address;
+    Sock sock_fd;
+    unsigned short port;
+};
+
+struct _string_stream_t {
     Packet buffer;
 };
 
@@ -223,9 +231,26 @@ void stream_init(void) {
     }
 }
 
-Stream stream_create(void) {
-    stream_t *stream = (stream_t*)malloc(sizeof(stream_t));
+SocketStream socket_stream_create(const char *host, unsigned short port) {
+    SocketStream stream = (socket_stream_t*)malloc(sizeof(socket_stream_t));
     stream->buffer = packet_create();
+
+    stream->host = (char*)malloc(strlen(host) * sizeof(char));
+    strncpy(stream->host, host, strlen(host));
+
+    stream->port = port; // short -> 2-bytes -> 65535
+    stream->ip_address = NULL;
+    stream->sock_fd = 0;
+
+    return stream;
+}
+
+StringStream string_stream_create(const char *string) {
+    StringStream stream = (string_stream_t*)malloc(sizeof(string_stream_t));
+    stream->buffer = packet_create();
+
+    // initializing buffer
+    packet_put_string(stream->buffer, string);
 
     return stream;
 }

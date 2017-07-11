@@ -58,6 +58,7 @@ typedef packet_t *Packet;
 /* Global Typedef */
 typedef unsigned int Sock;
 
+
 /* Packet Methods */
 Packet packet_create();
 void packet_put_uint8(Packet packet, const uint8_t value);
@@ -78,15 +79,19 @@ unsigned packet_get_data_size(const Packet packet);
 void packet_free(Packet *ptr_packet);
 
 
-
 /* Structure of StreamBase */
-struct _stream_t;
-typedef struct _stream_t stream_t;
-typedef stream_t *Stream;
+struct _socket_stream_t;
+typedef struct _socket_stream_t socket_stream_t;
+typedef socket_stream_t *SocketStream;
+
+struct _string_stream_t;
+typedef struct _string_stream_t string_stream_t;
+typedef string_stream_t *StringStream;
 
 
 /* Methods of Stream */
 void stream_init(void);
-Stream stream_create(void);
+SocketStream socket_stream_create(const char *host, unsigned short port);
+StringStream string_stream_create(const char *string);
 
 #endif

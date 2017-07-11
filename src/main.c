@@ -8,7 +8,7 @@
 
 int main() {
     stream_init();
-    Stream stream = stream_create();
+
 
     return 0;
 }
