@@ -45,7 +45,7 @@ static ByteNode byte_node_create(void);
 static bool byte_node_put(ByteNode node, uint8_t value);
 static uint8_t byte_node_pop(ByteNode node);
 static uint8_t byte_node_shift(ByteNode node);
-
+static uint16_t byte_node_get_size(ByteNode node);
 
 /* Static ByteArray Structure */
 typedef struct _byte_array_t {
@@ -188,16 +188,62 @@ uint64_t packet_shift_uint64(Packet packet) {
     return (hgh << 32) | low;
 }
 
-void packet_free(Packet *ptr_packet) {
-    byte_array_free(&(DE_PTR(ptr_packet)->byte_array));
+char *packet_cat_string(Packet packet, size_t length) {
+    if (packet_get_data_size(packet) < length) {
+        return NULL;
+    }
 
-    free(DE_PTR(ptr_packet));
-    DE_PTR(ptr_packet) = NULL;
+    char *string = (char*)malloc(sizeof(char) * length + 1);
+    ZERO_INIT(string, sizeof(char) * length + 1);
+
+    // single node
+    if (length < BYTE_NODE_DATA_SIZE) {
+        memcpy(string, packet->byte_array->header->values, length);
+        return string;
+    }
+
+    // multi node string
+    size_t index = 0;
+    size_t node_size = 0;
+    for (ByteNode curr = packet->byte_array->header; length; ) {
+        node_size = byte_node_get_size(curr);
+
+        if (length < BYTE_NODE_DATA_SIZE) {
+            memcpy(string + index, curr->values, length);
+            break;
+        }
+        memcpy(string + index, curr->values, node_size);
+
+        index += node_size;
+        length -= node_size;
+    }
+
+    return string;
+}
+
+bool packet_find_uint8(Packet packet, const uint8_t value) {
+    for (ByteNode curr = packet->byte_array->header; curr; curr = curr->next) {
+        for (uint16_t i = curr->header_index; i < curr->current_index; ++i) {
+            if (curr->values[i] == value) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool packet_find_string(Packet packet, const uint8_t *string) {
+    for (ByteNode curr = packet->byte_array->header; curr; curr = curr->next) {
+        for (uint16_t i = curr->header_index; i < curr->current_index; ++i) {
+            // single node and more node
+        }
+    }
+    return false;
 }
 
 unsigned packet_get_node_size(const Packet packet) {
     unsigned node_size = 0;
-    for (ByteNode node = packet->byte_array->header; node != NULL; node = node->next) {
+    for (ByteNode n = packet->byte_array->header; n != NULL; n = n->next) {
         node_size += 1;
     }
     return node_size;
@@ -206,11 +252,18 @@ unsigned packet_get_node_size(const Packet packet) {
 unsigned packet_get_data_size(const Packet packet) {
     unsigned packet_size = 0;
 
-    for (ByteNode node = packet->byte_array->header; node != NULL; node = node->next) {
-        packet_size += node->current_index - node->header_index;
+    for (ByteNode n = packet->byte_array->header; n != NULL; n = n->next) {
+        packet_size += byte_node_get_size(n);
     }
 
     return packet_size;
+}
+
+void packet_free(Packet *ptr_packet) {
+    byte_array_free(&(DE_PTR(ptr_packet)->byte_array));
+
+    free(DE_PTR(ptr_packet));
+    DE_PTR(ptr_packet) = NULL;
 }
 
 
@@ -282,6 +335,10 @@ static uint8_t byte_node_pop(ByteNode node) {
 
 static uint8_t byte_node_shift(ByteNode node) {
     return node->values[node->header_index++];
+}
+
+static uint16_t byte_node_get_size(ByteNode node) {
+    return node->current_index - node->header_index;
 }
 
 
